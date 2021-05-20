@@ -258,7 +258,8 @@ def feature_count_diff(
     repo = ctx.obj.repo
     base_rs, target_rs, working_copy = _parse_diff_commit_spec(repo, commit_spec)
 
-    dataset_change_counts = diff_estimation.estimate_diff_feature_counts(
+    estimator = diff_estimation.FeatureCountEstimator(repo)
+    dataset_change_counts = estimator.get_estimate(
         base_rs, target_rs, working_copy=working_copy, accuracy=accuracy
     )
 
@@ -272,6 +273,42 @@ def feature_count_diff(
     elif output_format == "json":
         dump_json_output(dataset_change_counts, output_path, json_style=json_style)
     if dataset_change_counts and exit_code:
+        sys.exit(1)
+
+
+def total_feature_size_diff(
+    ctx,
+    output_format,
+    commit_spec,
+    output_path,
+    exit_code,
+    json_style,
+    accuracy,
+):
+    if output_format not in ("text", "json"):
+        raise click.UsageError("--only-total-blob-size requires text or json output")
+
+    repo = ctx.obj.repo
+    base_rs, target_rs, working_copy = _parse_diff_commit_spec(repo, commit_spec)
+
+    estimator = diff_estimation.TotalFeatureSizeEstimator(repo)
+
+    dataset_total_feature_sizes = estimator.get_estimate(
+        base_rs, target_rs, working_copy=working_copy, accuracy=accuracy
+    )
+
+    if output_format == "text":
+        if dataset_total_feature_sizes:
+            for dataset_name, size in sorted(dataset_total_feature_sizes.items()):
+                click.secho(f"{dataset_name}:", bold=True)
+                click.echo(f"\t{size} bytes")
+        else:
+            click.echo("0 features changed")
+    elif output_format == "json":
+        dump_json_output(
+            dataset_total_feature_sizes, output_path, json_style=json_style
+        )
+    if dataset_total_feature_sizes and exit_code:
         sys.exit(1)
 
 
@@ -312,11 +349,22 @@ def feature_count_diff(
 @click.option(
     "--only-feature-count",
     default=None,
-    type=click.Choice(diff_estimation.ACCURACY_CHOICES),
+    type=click.Choice(diff_estimation.FeatureCountEstimator.ACCURACY_CHOICES),
     help=(
         "Returns only a feature count (the number of features modified in this diff). "
         "If the value is 'exact', the feature count is exact (this may be slow.) "
         "Otherwise, the feature count will be approximated with varying levels of accuracy."
+    ),
+)
+@click.option(
+    "--only-total-feature-size",
+    default=None,
+    type=click.Choice(diff_estimation.TotalFeatureSizeEstimator.ACCURACY_CHOICES),
+    help=(
+        "Returns only the sum of the blob sizes for the features involved in this diff. "
+        "If the value is 'exact', the total feature size is exact (this may be slow.) "
+        "Otherwise, the feature size will be approximated with varying levels of accuracy. "
+        "This option is much slower than --only-feature-count; use only when really required."
     ),
 )
 @click.argument("commit_spec", required=False, nargs=1)
@@ -329,6 +377,7 @@ def diff(
     exit_code,
     json_style,
     only_feature_count,
+    only_total_feature_size,
     commit_spec,
     filters,
 ):
@@ -357,6 +406,16 @@ def diff(
             exit_code,
             json_style,
             only_feature_count,
+        )
+    if only_total_feature_size:
+        return total_feature_size_diff(
+            ctx,
+            output_format,
+            commit_spec,
+            output_path,
+            exit_code,
+            json_style,
+            only_total_feature_size,
         )
 
     diff_writer = globals()[f"diff_output_{output_format}"]
