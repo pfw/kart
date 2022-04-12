@@ -254,6 +254,10 @@ def point_cloud_import(ctx, convert_to_copc, ds_path, sources):
     click.echo("Updating working copy...")
     reset_wc_if_needed(repo)
 
+    from kart.checkout import reset_wc_if_needed as reset_table_wc_if_needed
+
+    reset_table_wc_if_needed(repo, repo.head_commit)
+
 
 def _unwrap_metadata(metadata):
     if isinstance(metadata, str):
