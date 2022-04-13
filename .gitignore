@@ -20,6 +20,8 @@ vendor/libgit2/**
 !vendor/libgit2/Makefile
 vendor/libpq/**
 !vendor/libpq/Makefile
+vendor/pdal/**
+!vendor/pdal/Makefile
 vendor/proj/**
 !vendor/proj/Makefile
 vendor/psycopg2/**
@@ -30,6 +32,8 @@ vendor/pyodbc/**
 !vendor/pyodbc/Makefile
 vendor/pysqlite3/**
 !vendor/pysqlite3/Makefile
+vendor/python-pdal/**
+!vendor/python-pdal/Makefile
 vendor/spatialindex/**
 !vendor/spatialindex/Makefile
 vendor/spatialite/**

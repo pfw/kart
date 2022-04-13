@@ -42,7 +42,7 @@ PYDEPS := pip wheel $(WHEELTOOL) cmake==3.* certifi
 # if we export SSL_CERT_FILE it breaks wget under macos ¯\_(ツ)_/¯
 export CERTIFI_SSL_CERT_FILE=$(abspath $(PREFIX)/lib/python3.7/site-packages/certifi/cacert.pem)
 
-packages = proj jsonc geos gdal spatialite libgit2 pygit2 psycopg2 pysqlite3
+packages = proj jsonc geos gdal spatialite libgit2 pygit2 psycopg2 pysqlite3 pdal python-pdal
 ifeq ($(PLATFORM),Linux)
 packages += sqlite spatialindex git curl libpq pyodbc
 endif
@@ -66,8 +66,11 @@ lib-pygit2 := env/lib/python3.7/site-packages/pygit2/__init__.py
 lib-pysqlite3 := env/lib/python3.7/site-packages/pysqlite3/__init__.py
 lib-psycopg2 := env/lib/python3.7/site-packages/psycopg2/__init__.py
 lib-pyodbc := env/lib/python3.7/site-packages/pyodbc.$(LIBINFIX).so
+lib-pdal := env/lib/libpdalcpp.$(LIBSUFFIX)
+lib-python-pdal := env/lib/python3.7/site-packages/pdal/__init__.py
 
-build-libs := $(lib-gdal) $(lib-spatialite) $(lib-pygit2) $(lib-git) $(lib-libgit2) $(lib-psycopg2) $(lib-pysqlite3)
+
+build-libs := $(lib-gdal) $(lib-spatialite) $(lib-pygit2) $(lib-git) $(lib-libgit2) $(lib-psycopg2) $(lib-pysqlite3) $(lib-pdal) $(lib-python-pdal)
 
 
 # default target
@@ -88,6 +91,7 @@ $(lib-git): $(lib-curl) $(lib-sqlite) git_build
 $(lib-proj): $(lib-sqlite) proj_build
 $(lib-libgit2): libgit2_build
 $(lib-spatialite): $(lib-sqlite) $(lib-geos) $(lib-proj) spatialite_build
+$(lib-pdal): pdal_build
 
 $(lib-gdal): $(lib-sqlite) $(lib-geos) $(lib-proj) $(lib-jsonc) $(lib-pq)
 	$(MAKE) -C gdal install wheel
@@ -108,6 +112,10 @@ $(lib-pysqlite3): $(lib-sqlite)
 $(lib-pyodbc):
 	$(MAKE) -C pyodbc wheel
 	pip3 install --force-reinstall pyodbc/wheel/pyodbc-*$(WHEELID).whl
+
+$(lib-python-pdal): $(lib-pdal)
+	$(MAKE) -C python-pdal wheel
+	pip3 install --force-reinstall python-pdal/wheel/pdal-*$(WHEELID).whl
 
 
 ifeq ($(PLATFORM),Darwin)
@@ -281,6 +289,13 @@ lib-psycopg2: $(lib-psycopg2)
 .PHONY: lib-pyodbc
 lib-pyodbc: $(lib-pyodbc)
 
+.PHONY: lib-pdal
+lib-pdal: $(lib-pdal)
+
+.PHONY: lib-python-pdal
+lib-python-pdal: $(lib-python-pdal)
+
+
 .PHONY: build-Darwin
 build-Darwin: VENDOR:=build/vendor-Darwin
 build-Darwin: VENDOR_ENV:=$(VENDOR)/env
@@ -297,6 +312,7 @@ build-Darwin: $(build-libs) $(brew-libs)
 	cp -vf pygit2/wheel/pygit2-*$(WHEELID).whl $(VENDOR)/wheelhouse/
 	cp -vf psycopg2/wheel/psycopg2-*$(WHEELID).whl $(VENDOR)/wheelhouse/
 	cp -vf pysqlite3/wheel/pysqlite3-*$(WHEELID).whl $(VENDOR)/wheelhouse/
+	cp -vf python-pdal/wheel/pdal-*$(WHEELID).whl $(VENDOR)/wheelhouse/
 
 	cp -vaf env/lib/*.{dylib,so} $(VENDOR_ENV)/lib/
 
