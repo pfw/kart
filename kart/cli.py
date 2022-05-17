@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
+import array
 import importlib
+import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
+import socket
+from .socket_utils import logger, recv_fds
 
 import click
 import pygit2
@@ -217,7 +222,7 @@ def cli(ctx, repo_dir, verbose, post_mortem):
 )
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def push(ctx, do_progress, args):
-    """ Update remote refs along with associated objects """
+    """Update remote refs along with associated objects"""
     ctx.invoke(
         git,
         args=[
@@ -239,7 +244,7 @@ def push(ctx, do_progress, args):
 )
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def fetch(ctx, do_progress, args):
-    """ Download objects and refs from another repository """
+    """Download objects and refs from another repository"""
     ctx.invoke(
         git,
         args=[
@@ -254,7 +259,7 @@ def fetch(ctx, do_progress, args):
 @click.pass_context
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def remote(ctx, args):
-    """ Manage set of tracked repositories """
+    """Manage set of tracked repositories"""
     ctx.invoke(git, args=["remote", *args])
 
 
@@ -262,7 +267,7 @@ def remote(ctx, args):
 @click.pass_context
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def tag(ctx, args):
-    """ Create, list, delete or verify a tag object signed with GPG """
+    """Create, list, delete or verify a tag object signed with GPG"""
     ctx.invoke(git, args=["tag", *args])
 
 
@@ -270,7 +275,7 @@ def tag(ctx, args):
 @click.pass_context
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def reflog(ctx, args):
-    """ Manage reflog information """
+    """Manage reflog information"""
     ctx.invoke(git, args=["reflog", *args])
 
 
@@ -278,7 +283,7 @@ def reflog(ctx, args):
 @click.pass_context
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def config(ctx, args):
-    """ Get and set repository or global options """
+    """Get and set repository or global options"""
     ctx.invoke(git, args=["config", *args])
 
 
@@ -286,7 +291,7 @@ def config(ctx, args):
 @click.pass_context
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def gc(ctx, args):
-    """ Cleanup unnecessary files and optimize the local repository """
+    """Cleanup unnecessary files and optimize the local repository"""
     ctx.invoke(git, args=["gc", *args])
 
 
@@ -347,9 +352,73 @@ def load_commands_from_args(args, skip_first_arg=True):
             _load_all_commands()
 
 
-def entrypoint():
+def _entrypoint():
     load_commands_from_args(sys.argv)
     cli()
+
+
+def entrypoint():
+    if not os.environ.get("USE_HELPER"):
+        _entrypoint()
+    else:
+        load_commands_from_args(['--help', *sys.argv])
+        socket_filename = "kart.socket"
+        sock = socket.socket(family=socket.AF_UNIX)
+
+        if os.path.exists(socket_filename):
+            os.remove(socket_filename)
+
+        sock.bind(socket_filename)
+        sock.listen()
+        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+
+        while True:
+            # this should have a timeout and the process would die if it ran too long without a cli talking to it
+            sock.settimeout(5)
+            try:
+                client, info = sock.accept()
+                payload, fds = recv_fds(client, 4000, 4)
+
+                if os.fork() == 0:
+
+                    # the payload would include details as per cli.py
+                    # from this the forked child would cd to the correct directory, get pid, get args and environ, etc.
+
+                    # as there is a new process the child could drop permissions here or use a security system to set up
+                    # controls, chroot etc.
+                    calling_environment = json.loads(payload)
+
+                    cli_stdin = os.fdopen(fds[0], mode='r')
+                    cli_stdout = os.fdopen(fds[1], mode="w")
+                    cli_stderr = os.fdopen(fds[2], mode="w")
+                    os.fchdir(fds[3])
+
+                    sys.argv[1:] = calling_environment['argv'][1:]
+
+                    os.environ.clear()
+                    os.environ.update(calling_environment['environ'])
+
+                    # the helper child environment is set up so now do the work and write to the cli's stdout
+                    sys.stdin = cli_stdin
+                    sys.stdout = cli_stdout
+                    sys.stderr = cli_stderr
+                    try:
+                        # TODO - commands might call other things and not come out of cli(), eg. log, execvp is called, ???
+                        cli()
+                    except SystemExit:
+                        """ exit is called in the commands """
+
+                    try:
+                        # send a signal to cli that we are done
+                        os.kill(calling_environment['pid'], signal.SIGALRM)
+                    except ProcessLookupError as e:
+                        pass
+
+            except socket.timeout:
+                print("closing no connects for 5 seconds")
+                break
+        os.unlink(socket_filename)
+        sys.exit()
 
 
 if __name__ == "__main__":
