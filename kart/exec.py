@@ -27,4 +27,5 @@ def execvpe(cmd, args, env):
 
 
 def execvp(cmd, args):
+    # TODO - what to do with the caller if in helper mode, it needs to be shutdown
     return execvpe(cmd, args, os.environ)
