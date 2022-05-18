@@ -1,17 +1,20 @@
+"""
+Open questions...
+
+- TODOs as below
+- Should there be a log file to trace behaviour of client and helper?
+"""
 import time
 
 s = time.time()
-
+import marshal
 import array
-import json
-from pathlib import Path
-
 import sys
 import os
 import socket
 import signal
 
-print(f"imports done [{(time.time() - s):.3f}]")
+# print(f"imports done [{(time.time() - s):.3f}]")
 
 
 def send_fds(sock, msg, fds):
@@ -37,7 +40,7 @@ def entrypoint():
     # TODO - resolve where the socket should live and how the processes can find it
     #  for now just create in the home directory with user only permissions
 
-    socket_filename = str(Path.home() / ".kart.socket")
+    socket_filename = os.path.join(os.path.expanduser("~"), ".kart.socket")
 
     try:
         sys.argv.remove("--use-helper")
@@ -49,8 +52,8 @@ def entrypoint():
         sock.connect(socket_filename)
     except OSError:
         # start the helper in the background
-        cmd = Path.cwd() / "kart"
-        cmdline = [Path.cwd() / "kart", "helper", "--socket", socket_filename]
+        cmd = "kart"
+        cmdline = [cmd, "helper", "--socket", socket_filename]
         os.environ.update(
             {
                 "NO_CONFIGURE_PROCESS_CLEANUP": "1",  # TODO - need to figure out exactly process cleanup
@@ -66,14 +69,12 @@ def entrypoint():
     # here we send a payload to the helper
     # it should include all the cli's environment and args
     # we also send fds to the helper which should include the current directory, stdout, etc. etc.
-    payload = bytes(
-        json.dumps(
-            {"pid": os.getpid(), "argv": sys.argv, "environ": dict(os.environ)}
-        ),
-        encoding="ascii",
+    payload = marshal.dumps(
+        {"pid": os.getpid(), "argv": sys.argv, "environ": dict(os.environ)}
     )
+
     # TODO - check the payload is smaller than what the helper will call recvmsg with, currently 4000
-    print(f"sendfds [{(time.time() - s):.3f}]")
+    # print(f"sendfds [{(time.time() - s):.3f}]")
 
     send_fds(
         sock,
@@ -85,11 +86,11 @@ def entrypoint():
             os.open(os.getcwd(), os.O_RDONLY),
         ],
     )
-    print(f"done sendfds [{(time.time() - s):.3f}]")
+    # print(f"done sendfds [{(time.time() - s):.3f}]")
 
     # the helper sends a signal to say it is done
     def handler(signum, frame):
-        print(f"exiting on signal {signum} [{(time.time() - s):.3f}]")
+        # print(f"exiting on signal {signum} [{(time.time() - s):.3f}]")
         sys.exit()
 
     signal.signal(signal.SIGALRM, handler)
