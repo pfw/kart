@@ -2,8 +2,8 @@
 import importlib
 import importlib.util
 import inspect
-import json
 import logging
+import marshal
 import os
 import pathlib
 import re
@@ -22,7 +22,7 @@ import pygit2
 from . import core  # noqa
 from .cli_util import add_help_subcommand, call_and_exit_flag, tool_environment
 from .context import Context
-from .exec import execvp
+from .exec import execvp, spawn_and_wait
 
 MODULE_COMMANDS = {
     "annotations.cli": {"build-annotations"},
@@ -287,34 +287,42 @@ def helper(ctx, socket_filename, timeout, args):
 
             if os.fork() == 0:
                 s = time.time()
+
                 # as there is a new process the child could drop permissions here or use a security system to set up
                 # controls, chroot etc.
-
-                calling_environment = json.loads(payload)
-
-                sys.argv[1:] = calling_environment["argv"][1:]
-
-                os.environ.clear()
-                os.environ.update(calling_environment["environ"])
 
                 # set this processes stdin/stdout/stderr to the calling processes passed in fds
                 os.dup2(fds[0], 0)
                 os.dup2(fds[1], 1)
                 os.dup2(fds[2], 2)
+
                 # change to the calling processes working directory
                 os.fchdir(fds[3])
 
                 try:
-                    cli()
-                except SystemExit:
-                    """exit is called in the commands but we ignore as we need to clean up the caller"""
+                    calling_environment = marshal.loads(payload)
+                except (TypeError, ValueError):
+                    click.echo("kart helper: Unable to read command from kartcli")
+                else:
+                    sys.argv[1:] = calling_environment["argv"][1:]
 
-                try:
-                    # send a signal to caller that we are done
-                    os.kill(calling_environment["pid"], signal.SIGALRM)
-                except ProcessLookupError as e:
-                    pass
-                print(f"cli duration [{(time.time() - s):.3f}]")
+                    os.environ.clear()
+                    os.environ.update(calling_environment["environ"])
+
+                    try:
+                        cli()
+                    except SystemExit:
+                        """exit is called in the commands but we ignore as we need to clean up the caller"""
+                    except Exception as e:
+                        print(f"kart helper: unhandled exception [{e}]")  # TODO - should ext-run capture/handle this?
+
+                    try:
+                        # send a signal to caller that we are done
+                        os.kill(calling_environment["pid"], signal.SIGALRM)
+                    except ProcessLookupError as e:
+                        pass
+
+                # print(f"kart helper: cli() duration [{(time.time() - s):.3f}]")
                 sys.exit()
 
         except socket.timeout:
@@ -397,7 +405,7 @@ def git(ctx, args):
     params = ["git"]
     if ctx.obj.user_repo_path:
         params += ["-C", ctx.obj.user_repo_path]
-    execvp("git", [*params, *args])
+    spawn_and_wait("git", [*params, *args])
 
 
 @cli.command(context_settings=dict(ignore_unknown_options=True), hidden=True)
@@ -412,7 +420,7 @@ def lfs(ctx, args):
     if ctx.obj.user_repo_path:
         params += ["-C", ctx.obj.user_repo_path]
     params += ["lfs"]
-    execvp("git", [*params, *args])
+    spawn_and_wait("git", [*params, *args])
 
 
 @cli.command(
