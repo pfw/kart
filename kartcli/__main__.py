@@ -1,6 +1,19 @@
 """
-Open questions...
+Fast start up client to 'kart helper' mode.
 
+To run with the helper:
+
+cd build
+PATH=./venv/bin:$PATH ./venv/bin/python -S ../kartcli/__main__.py
+
+There is a socket created by default at ~/.kart.socket
+
+The helper will time out and shutdown after 5min by default but killing it directly
+is enough to restart everyhing. There is no need to remove the socket if the helper
+has died.
+
+Open questions...
+- how to organise the caller into 'kart' command
 - TODOs as below
 - Should there be a log file to trace behaviour of client and helper?
 """
