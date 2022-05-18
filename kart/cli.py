@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import array
 import importlib
 import json
 import logging
@@ -9,6 +8,9 @@ import signal
 import subprocess
 import sys
 import socket
+import time
+from pathlib import Path
+
 from .socket_utils import logger, recv_fds
 
 import click
@@ -236,6 +238,93 @@ def push(ctx, do_progress, args):
 @cli.command(context_settings=dict(ignore_unknown_options=True))
 @click.pass_context
 @click.option(
+    "--socket",
+    "socket_filename",
+    default=Path.home() / ".kart.socket",
+    show_default=True,
+    help="What socket to use",
+)
+@click.option(
+    "--timeout",
+    "timeout",
+    default=300,
+    show_default=True,
+    help="Timeout and shutdown helper when no commands received with this time",
+)
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def helper(ctx, socket_filename, timeout, args):
+    """Start the background helper process to speed up interaction"""
+    load_commands_from_args(["--help"])
+
+    click.echo(f"Helper using socket [{socket_filename}]")
+
+    sock = socket.socket(family=socket.AF_UNIX)
+    os.umask(0o077)
+    try:
+        if os.path.exists(socket_filename):
+            os.unlink(socket_filename)
+
+        sock.bind(str(socket_filename))
+    except OSError as e:
+        print(dir(e))
+        click.echo(f"Unable to bind to socket [{socket_filename}] [{e.strerror}]")
+        ctx.exit(1)
+
+    sock.listen()
+
+    # ignore SIGCHLD so zombies don't remain when the child is complete
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+
+    while True:
+        # The helper will exit if no command received within timeout
+        sock.settimeout(timeout)
+        try:
+            client, info = sock.accept()
+            payload, fds = recv_fds(client, 4000, 4)
+
+            if os.fork() == 0:
+                s = time.time()
+                # as there is a new process the child could drop permissions here or use a security system to set up
+                # controls, chroot etc.
+
+                calling_environment = json.loads(payload)
+
+                sys.argv[1:] = calling_environment["argv"][1:]
+
+                os.environ.clear()
+                os.environ.update(calling_environment["environ"])
+
+                # set this processes stdin/stdout/stderr to the calling processes passed in fds
+                os.dup2(fds[0], 0)
+                os.dup2(fds[1], 1)
+                os.dup2(fds[2], 2)
+                # change to the calling processes working directory
+                os.fchdir(fds[3])
+
+                try:
+                    cli()
+                except SystemExit:
+                    """exit is called in the commands but we ignore as we need to clean up the caller"""
+
+                try:
+                    # send a signal to caller that we are done
+                    os.kill(calling_environment["pid"], signal.SIGALRM)
+                except ProcessLookupError as e:
+                    pass
+                print(f"cli duration [{(time.time() - s):.3f}]")
+                sys.exit()
+
+        except socket.timeout:
+            try:
+                os.unlink(socket_filename)
+            except FileNotFoundError:
+                """already unlinked???"""
+            sys.exit()
+
+
+@cli.command(context_settings=dict(ignore_unknown_options=True))
+@click.pass_context
+@click.option(
     "--progress/--quiet",
     "do_progress",
     is_flag=True,
@@ -352,73 +441,9 @@ def load_commands_from_args(args, skip_first_arg=True):
             _load_all_commands()
 
 
-def _entrypoint():
+def entrypoint():
     load_commands_from_args(sys.argv)
     cli()
-
-
-def entrypoint():
-    if not os.environ.get("USE_HELPER"):
-        _entrypoint()
-    else:
-        load_commands_from_args(['--help', *sys.argv])
-        socket_filename = "kart.socket"
-        sock = socket.socket(family=socket.AF_UNIX)
-
-        if os.path.exists(socket_filename):
-            os.remove(socket_filename)
-
-        sock.bind(socket_filename)
-        sock.listen()
-        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-
-        while True:
-            # this should have a timeout and the process would die if it ran too long without a cli talking to it
-            sock.settimeout(5)
-            try:
-                client, info = sock.accept()
-                payload, fds = recv_fds(client, 4000, 4)
-
-                if os.fork() == 0:
-
-                    # the payload would include details as per cli.py
-                    # from this the forked child would cd to the correct directory, get pid, get args and environ, etc.
-
-                    # as there is a new process the child could drop permissions here or use a security system to set up
-                    # controls, chroot etc.
-                    calling_environment = json.loads(payload)
-
-                    cli_stdin = os.fdopen(fds[0], mode='r')
-                    cli_stdout = os.fdopen(fds[1], mode="w")
-                    cli_stderr = os.fdopen(fds[2], mode="w")
-                    os.fchdir(fds[3])
-
-                    sys.argv[1:] = calling_environment['argv'][1:]
-
-                    os.environ.clear()
-                    os.environ.update(calling_environment['environ'])
-
-                    # the helper child environment is set up so now do the work and write to the cli's stdout
-                    sys.stdin = cli_stdin
-                    sys.stdout = cli_stdout
-                    sys.stderr = cli_stderr
-                    try:
-                        # TODO - commands might call other things and not come out of cli(), eg. log, execvp is called, ???
-                        cli()
-                    except SystemExit:
-                        """ exit is called in the commands """
-
-                    try:
-                        # send a signal to cli that we are done
-                        os.kill(calling_environment['pid'], signal.SIGALRM)
-                    except ProcessLookupError as e:
-                        pass
-
-            except socket.timeout:
-                print("closing no connects for 5 seconds")
-                break
-        os.unlink(socket_filename)
-        sys.exit()
 
 
 if __name__ == "__main__":

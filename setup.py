@@ -19,7 +19,6 @@ setup(
         "console_scripts": [
             "kart = kart.cli:entrypoint",
             "sno = kart.cli:entrypoint",
-            "cmd = kart.cmd:entrypoint",
         ],
     },
 )
