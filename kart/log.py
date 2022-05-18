@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 import sys
@@ -378,7 +379,7 @@ def log(
         if fmt:
             options.append(f"--format={fmt}")
         git_args = ["git", "-C", repo.path, "log", *options, *commits, "--", *paths]
-        execvp("git", git_args)
+        os.spawnvp(os.P_WAIT, "git", git_args)
 
     elif output_type in ("json", "json-lines"):
         try:
