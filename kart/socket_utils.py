@@ -4,11 +4,6 @@ import time
 import array
 import socket
 
-logger = logging.getLogger()
-logging.basicConfig(
-    format="%(asctime)-15s pid=%(process)d %(side)s: %(message)s", level=logging.INFO
-)
-
 # Function from https://docs.python.org/3/library/socket.html#socket.socket.recvmsg
 def recv_fds(sock, msglen, maxfds):
     fds = array.array("i")  # Array of ints
