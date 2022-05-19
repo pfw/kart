@@ -278,6 +278,9 @@ def helper(ctx, socket_filename, timeout, args):
     # ignore SIGCHLD so zombies don't remain when the child is complete
     signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
+    # import modules that are deferred loaded in normal kart execution
+    from .working_copy.gpkg import WorkingCopy_GPKG
+
     while True:
         # The helper will exit if no command received within timeout
         sock.settimeout(timeout)
