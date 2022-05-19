@@ -280,15 +280,26 @@ def helper(ctx, socket_filename, timeout, args):
 
     # import modules that are deferred loaded in normal kart execution
     from .working_copy.gpkg import WorkingCopy_GPKG
+    import kart
+    import osgeo
+    import psycopg2
+    import pysqlite3
+    import rtree
+
+    import sqlalchemy
+    from kart.sqlalchemy.gpkg import Db_GPKG
+    import pygments.token as token
+    from pygments.formatters import TerminalFormatter
+    import pygments.styles.default
 
     while True:
         # The helper will exit if no command received within timeout
         sock.settimeout(timeout)
         try:
             client, info = sock.accept()
-            payload, fds = recv_fds(client, 4000, 4)
-
             if os.fork() == 0:
+                payload, fds = recv_fds(client, 4000, 4)
+                # print("kart helper: handlng request...", payload)
                 s = time.time()
 
                 # as there is a new process the child could drop permissions here or use a security system to set up
