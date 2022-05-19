@@ -3,7 +3,7 @@ import importlib
 import importlib.util
 import inspect
 import logging
-import marshal
+import json
 import os
 import pathlib
 import re
@@ -300,7 +300,7 @@ def helper(ctx, socket_filename, timeout, args):
                 os.fchdir(fds[3])
 
                 try:
-                    calling_environment = marshal.loads(payload)
+                    calling_environment = json.loads(payload)
                 except (TypeError, ValueError):
                     click.echo("kart helper: Unable to read command from kartcli")
                 else:

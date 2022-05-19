@@ -20,7 +20,7 @@ Open questions...
 import time
 
 s = time.time()
-import marshal
+import json
 import array
 import sys
 import os
@@ -82,9 +82,9 @@ def entrypoint():
     # here we send a payload to the helper
     # it should include all the cli's environment and args
     # we also send fds to the helper which should include the current directory, stdout, etc. etc.
-    payload = marshal.dumps(
+    payload = bytes(json.dumps(
         {"pid": os.getpid(), "argv": sys.argv, "environ": dict(os.environ)}
-    )
+    ), encoding='ascii')
 
     # TODO - check the payload is smaller than what the helper will call recvmsg with, currently 4000
     # print(f"sendfds [{(time.time() - s):.3f}]")
