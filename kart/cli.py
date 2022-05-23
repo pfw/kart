@@ -259,7 +259,7 @@ def helper(ctx, socket_filename, timeout, args):
     """Start the background helper process to speed up interaction"""
     load_commands_from_args(["--help"])
 
-    click.echo(f"Helper using socket [{socket_filename}]")
+    # click.echo(f"Helper using socket [{socket_filename}]")
 
     sock = socket.socket(family=socket.AF_UNIX)
     os.umask(0o077)
